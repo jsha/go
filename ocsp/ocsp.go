@@ -1,17 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"os"
 
 	"golang.org/x/crypto/ocsp"
 )
+
+var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
@@ -58,38 +60,65 @@ func req(fileName string) error {
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s%s\n", cert.OCSPServer[0], base64.StdEncoding.EncodeToString(req))
-	log.Printf("Fetching %s", url)
-	httpResp, err := http.Get(url)
-	if err != nil {
-		return err
+	if len(cert.OCSPServer) == 0 {
+		return fmt.Errorf("no ocsp servers in cert")
+	}
+	encodedReq := base64.StdEncoding.EncodeToString(req)
+	var httpResp *http.Response
+	ocspServer := cert.OCSPServer[0]
+	if *method == "GET" {
+		url := fmt.Sprintf("%s%s\n", ocspServer, encodedReq)
+		fmt.Printf("Fetching %s\n", url)
+		var err error
+		httpResp, err = http.Get(url)
+		if err != nil {
+			return err
+		}
+	} else if *method == "POST" {
+		fmt.Printf("Posting to %s: base64dec(%s)\n", ocspServer, encodedReq)
+		var err error
+		httpResp, err = http.Post(ocspServer, "application/ocsp-request", bytes.NewBuffer(req))
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("invalid method %s, expected GET or POST", *method)
+	}
+	for k, v := range httpResp.Header {
+		for _, vv := range v {
+			fmt.Printf("%s: %s\n", k, vv)
+		}
 	}
 	respBytes, err := ioutil.ReadAll(httpResp.Body)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("\nDecoding body: %s\n", base64.StdEncoding.EncodeToString(respBytes))
 	resp, err := ocsp.ParseResponse(respBytes, issuer)
 	if err != nil {
 		return err
 	}
-	log.Printf("Good response:\n")
-	log.Printf("  Status %d\n", resp.Status)
-	log.Printf("  SerialNumber %036x\n", resp.SerialNumber)
-	log.Printf("  ProducedAt %s\n", resp.ProducedAt)
-	log.Printf("  ThisUpdate %s\n", resp.NextUpdate)
-	log.Printf("  NextUpdate %s\n", resp.NextUpdate)
-	log.Printf("  RevokedAt %s\n", resp.RevokedAt)
-	log.Printf("  RevocationReason %d\n", resp.RevocationReason)
-	log.Printf("  SignatureAlgorithm %s\n", resp.SignatureAlgorithm)
-	log.Printf("  Extensions %#v\n", resp.Extensions)
+	fmt.Printf("\n")
+	fmt.Printf("Good response:\n")
+	fmt.Printf("  Status %d\n", resp.Status)
+	fmt.Printf("  SerialNumber %036x\n", resp.SerialNumber)
+	fmt.Printf("  ProducedAt %s\n", resp.ProducedAt)
+	fmt.Printf("  ThisUpdate %s\n", resp.NextUpdate)
+	fmt.Printf("  NextUpdate %s\n", resp.NextUpdate)
+	fmt.Printf("  RevokedAt %s\n", resp.RevokedAt)
+	fmt.Printf("  RevocationReason %d\n", resp.RevocationReason)
+	fmt.Printf("  SignatureAlgorithm %s\n", resp.SignatureAlgorithm)
+	fmt.Printf("  Extensions %#v\n", resp.Extensions)
 	return nil
 }
 
 func main() {
-	for _, f := range os.Args[1:] {
+	flag.Parse()
+	for _, f := range flag.Args() {
 		err := req(f)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Printf("error: %s\n", err)
+			return
 		}
 	}
 }
