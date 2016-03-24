@@ -14,6 +14,7 @@ import (
 )
 
 var method = flag.String("method", "GET", "Method to use for fetching OCSP")
+var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
@@ -29,10 +30,13 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 		return nil, err
 	}
 	block, _ := pem.Decode(body)
+	var der []byte
 	if block == nil {
-		return nil, fmt.Errorf("no PEM data found")
+		der = body
+	} else {
+		der = block.Bytes
 	}
-	issuer, err := x509.ParseCertificate(block.Bytes)
+	issuer, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +70,9 @@ func req(fileName string) error {
 	encodedReq := base64.StdEncoding.EncodeToString(req)
 	var httpResp *http.Response
 	ocspServer := cert.OCSPServer[0]
+	if *urlOverride != "" {
+		ocspServer = *urlOverride
+	}
 	if *method == "GET" {
 		url := fmt.Sprintf("%s%s\n", ocspServer, encodedReq)
 		fmt.Printf("Fetching %s\n", url)
