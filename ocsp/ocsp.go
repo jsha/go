@@ -29,6 +29,10 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parse(body)
+}
+
+func parse(body []byte) (*x509.Certificate, error) {
 	block, _ := pem.Decode(body)
 	var der []byte
 	if block == nil {
@@ -36,11 +40,11 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	} else {
 		der = block.Bytes
 	}
-	issuer, err := x509.ParseCertificate(der)
+	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
 	}
-	return issuer, nil
+	return cert, nil
 }
 
 func req(fileName string) error {
@@ -48,11 +52,7 @@ func req(fileName string) error {
 	if err != nil {
 		return err
 	}
-	block, _ := pem.Decode(contents)
-	if block == nil {
-		return fmt.Errorf("no PEM data found")
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
+	cert, err := parse(contents)
 	if err != nil {
 		return err
 	}
