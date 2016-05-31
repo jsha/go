@@ -12,9 +12,9 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/jmhodges/clock"
-	"github.com/letsencrypt/boulder/Godeps/_workspace/src/github.com/miekg/dns"
 	"github.com/letsencrypt/boulder/bdns"
 	"github.com/letsencrypt/boulder/metrics"
+	"github.com/miekg/dns"
 )
 
 var parallel = flag.Int("parallel", 5, "parallel requests")
