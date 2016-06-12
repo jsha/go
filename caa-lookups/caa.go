@@ -1,4 +1,4 @@
-package main
+/*package main
 
 import (
 	"bufio"
@@ -94,3 +94,4 @@ func main() {
 	close(names)
 	wg.Wait()
 }
+*/
