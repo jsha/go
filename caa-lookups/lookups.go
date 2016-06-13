@@ -22,13 +22,13 @@ func tryAll(name string) error {
 	m.SetQuestion(dns.Fqdn(name), dns.TypeA)
 	_, _, err := c.Exchange(m, *server)
 	if err != nil {
-		return fmt.Errorf("for A: err")
+		return fmt.Errorf("for A: %s", err)
 	}
 
 	for i := 0; i < len(labels); i++ {
 		err = try(strings.Join(labels[i:], "."))
 		if err != nil {
-			return fmt.Errorf("for CAA: err")
+			return fmt.Errorf("for CAA: %s", err)
 		}
 	}
 	return nil
