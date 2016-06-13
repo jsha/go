@@ -8,41 +8,43 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/miekg/dns"
 )
 
 var server = flag.String("server", "127.0.0.1:53", "DNS server")
-var c = new(dns.Client)
+var c = &dns.Client{
+	Net:         "tcp",
+	ReadTimeout: 30 * time.Second,
+}
 
-func tryAll(name string) error {
-	labels := strings.Split(name, ".")
-
+func query(name string, typ uint16) error {
 	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn(name), dns.TypeA)
-	_, _, err := c.Exchange(m, *server)
+	m.SetQuestion(dns.Fqdn(name), typ)
+	in, _, err := c.Exchange(m, *server)
 	if err != nil {
-		return fmt.Errorf("for A: %s", err)
-	}
-
-	for i := 0; i < len(labels); i++ {
-		err = try(strings.Join(labels[i:], "."))
-		if err != nil {
-			return fmt.Errorf("for CAA: %s", err)
-		}
+		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], err)
+	} else if in.Rcode != dns.RcodeSuccess {
+		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], dns.RcodeToString[in.Rcode])
 	}
 	return nil
 }
 
-func try(name string) error {
-	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn(name), dns.TypeCAA)
-	_, _, err := c.Exchange(m, *server)
+func tryAll(name string) error {
+	err := query(name, dns.TypeA)
 	if err != nil {
 		return err
-	} else {
-		return nil
 	}
+
+	labels := strings.Split(name, ".")
+	for i := 0; i < len(labels); i++ {
+		err = query(strings.Join(labels[i:], "."), dns.TypeCAA)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func main() {
