@@ -14,8 +14,9 @@ import (
 )
 
 var server = flag.String("server", "127.0.0.1:53", "DNS server")
+var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
 var c = &dns.Client{
-	Net:         "tcp",
+	Net:         *proto,
 	ReadTimeout: 30 * time.Second,
 }
 
