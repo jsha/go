@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/miekg/dns"
@@ -64,6 +65,15 @@ func tryAll(name string) error {
 
 func main() {
 	flag.Parse()
+	var rLimit syscall.Rlimit
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if *parallel > int(rLimit.Cur) {
+		log.Fatalf("ulimit for nofile lower than -parallel: %d vs %d.",
+			rLimit.Cur, *parallel)
+	}
 	b, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
 		log.Fatal(err)
