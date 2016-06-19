@@ -1,10 +1,13 @@
 package main
 
 import (
+	"expvar"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -13,21 +16,31 @@ import (
 	"github.com/miekg/dns"
 )
 
+var debugAddr = flag.String("debugAddr", ":6363", "Timeout")
+var timeout = flag.Duration("timeout", 30*time.Second, "Timeout")
 var server = flag.String("server", "127.0.0.1:53", "DNS server")
 var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
-var c = &dns.Client{
-	Net:         *proto,
-	ReadTimeout: 30 * time.Second,
-}
+var parallel = flag.Int("parallel", 5, "Number of parallel queries")
+var c *dns.Client
+
+var resultStats = expvar.NewMap("results")
+var attempts = expvar.NewInt("attempts")
+var successes = expvar.NewInt("successes")
 
 func query(name string, typ uint16) error {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), typ)
 	in, _, err := c.Exchange(m, *server)
 	if err != nil {
+		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+			err = fmt.Errorf("timeout")
+		}
+		resultStats.Add(err.Error(), 1)
 		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], err)
 	} else if in.Rcode != dns.RcodeSuccess {
-		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], dns.RcodeToString[in.Rcode])
+		rcodeStr := dns.RcodeToString[in.Rcode]
+		resultStats.Add(rcodeStr, 1)
+		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], rcodeStr)
 	}
 	return nil
 }
@@ -45,6 +58,7 @@ func tryAll(name string) error {
 			return err
 		}
 	}
+	resultStats.Add("ok", 1)
 	return nil
 }
 
@@ -54,19 +68,27 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	c = &dns.Client{
+		Net:         *proto,
+		ReadTimeout: *timeout,
+	}
 	names := make(chan string)
 	wg := sync.WaitGroup{}
-	for i := 0; i < 5; i++ {
+	for i := 0; i < *parallel; i++ {
 		go func() {
 			for name := range names {
+				attempts.Add(1)
 				err := tryAll(name)
 				if err != nil {
 					fmt.Printf("%s: %s\n", name, err)
+				} else {
+					successes.Add(1)
 				}
 				wg.Done()
 			}
 		}()
 	}
+	go http.ListenAndServe(*debugAddr, nil)
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
 			wg.Add(1)
