@@ -1,7 +1,6 @@
 package main
 
 import (
-	"expvar"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	prom "github.com/prometheus/client_golang/prometheus"
 )
 
 var debugAddr = flag.String("debugAddr", ":6363", "Timeout")
@@ -22,11 +22,24 @@ var timeout = flag.Duration("timeout", 30*time.Second, "Timeout")
 var server = flag.String("server", "127.0.0.1:53", "DNS server")
 var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
 var parallel = flag.Int("parallel", 5, "Number of parallel queries")
+var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
+var spawnInterval = flag.Duration("spawnInterval", 1*time.Minute, "Interval on which to spawn goroutines")
 var c *dns.Client
 
-var resultStats = expvar.NewMap("results")
-var attempts = expvar.NewInt("attempts")
-var successes = expvar.NewInt("successes")
+var (
+	resultStats = prom.NewCounterVec(prom.CounterOpts{
+		Name: "results",
+		Help: "lookup results",
+	}, []string{"result"})
+	attempts = prom.NewCounter(prom.CounterOpts{
+		Name: "attempts",
+		Help: "number of lookup attempts",
+	})
+	successes = prom.NewCounter(prom.CounterOpts{
+		Name: "successes",
+		Help: "number of lookup successes",
+	})
+)
 
 func query(name string, typ uint16) error {
 	m := new(dns.Msg)
@@ -36,11 +49,11 @@ func query(name string, typ uint16) error {
 		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 			err = fmt.Errorf("timeout")
 		}
-		resultStats.Add(err.Error(), 1)
+		resultStats.With(prom.Labels{"result": err.Error()}).Add(1)
 		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], err)
 	} else if in.Rcode != dns.RcodeSuccess {
 		rcodeStr := dns.RcodeToString[in.Rcode]
-		resultStats.Add(rcodeStr, 1)
+		resultStats.With(prom.Labels{"result": rcodeStr}).Add(1)
 		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], rcodeStr)
 	}
 	return nil
@@ -59,8 +72,28 @@ func tryAll(name string) error {
 			return err
 		}
 	}
-	resultStats.Add("ok", 1)
+	resultStats.With(prom.Labels{"result": "ok"}).Add(1)
 	return nil
+}
+
+func spawn(names chan string, wg *sync.WaitGroup) {
+	for i := 0; i < *parallel; {
+		for j := 0; j < *spawnRate; i, j = i+1, j+1 {
+			go func() {
+				for name := range names {
+					attempts.Add(1)
+					err := tryAll(name)
+					if err != nil {
+						fmt.Printf("%s: %s\n", name, err)
+					} else {
+						successes.Add(1)
+					}
+					wg.Done()
+				}
+			}()
+			time.Sleep(*spawnInterval)
+		}
+	}
 }
 
 func main() {
@@ -74,6 +107,11 @@ func main() {
 		log.Fatalf("ulimit for nofile lower than -parallel: %d vs %d.",
 			rLimit.Cur, *parallel)
 	}
+
+	prom.MustRegister(resultStats)
+	prom.MustRegister(attempts)
+	prom.MustRegister(successes)
+
 	b, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
 		log.Fatal(err)
@@ -84,20 +122,8 @@ func main() {
 	}
 	names := make(chan string)
 	wg := sync.WaitGroup{}
-	for i := 0; i < *parallel; i++ {
-		go func() {
-			for name := range names {
-				attempts.Add(1)
-				err := tryAll(name)
-				if err != nil {
-					fmt.Printf("%s: %s\n", name, err)
-				} else {
-					successes.Add(1)
-				}
-				wg.Done()
-			}
-		}()
-	}
+	go spawn(names, &wg)
+	http.Handle("/metrics", prom.Handler())
 	go http.ListenAndServe(*debugAddr, nil)
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
