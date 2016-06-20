@@ -39,22 +39,28 @@ var (
 		Name: "successes",
 		Help: "number of lookup successes",
 	})
+	queryTimes = prom.NewSummaryVec(prom.SummaryOpts{
+		Name: "queryTime",
+		Help: "amount of time queries take",
+	}, []string{"type"})
 )
 
 func query(name string, typ uint16) error {
+	typStr := dns.TypeToString[typ]
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), typ)
-	in, _, err := c.Exchange(m, *server)
+	in, rtt, err := c.Exchange(m, *server)
+	queryTimes.With(prom.Labels{"type": typStr}).Observe(float64(rtt))
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 			err = fmt.Errorf("timeout")
 		}
 		resultStats.With(prom.Labels{"result": err.Error()}).Add(1)
-		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], err)
+		return fmt.Errorf("for %s: %s", typStr, err)
 	} else if in.Rcode != dns.RcodeSuccess {
 		rcodeStr := dns.RcodeToString[in.Rcode]
 		resultStats.With(prom.Labels{"result": rcodeStr}).Add(1)
-		return fmt.Errorf("for %s: %s", dns.TypeToString[typ], rcodeStr)
+		return fmt.Errorf("for %s: %s", typStr, rcodeStr)
 	}
 	return nil
 }
@@ -111,6 +117,7 @@ func main() {
 	prom.MustRegister(resultStats)
 	prom.MustRegister(attempts)
 	prom.MustRegister(successes)
+	prom.MustRegister(queryTimes)
 
 	b, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
