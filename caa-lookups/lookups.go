@@ -91,8 +91,8 @@ func spawn(names chan string, wg *sync.WaitGroup) {
 					wg.Done()
 				}
 			}()
-			time.Sleep(*spawnInterval)
 		}
+		time.Sleep(*spawnInterval)
 	}
 }
 
