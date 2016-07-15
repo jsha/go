@@ -1,0 +1,9 @@
+{
+	"ImportPath": "github.com/jsha/go/badcsr",
+	"GoVersion": "go1.6",
+	"GodepVersion": "v74",
+	"Packages": [
+		"crypto/x509"
+	],
+	"Deps": []
+}
