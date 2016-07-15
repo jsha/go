@@ -3,10 +3,8 @@ package main
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 )
 
 func main() {
