@@ -43,7 +43,7 @@ var (
 	})
 	queryTimes = prom.NewSummaryVec(prom.SummaryOpts{
 		Name: "queryTime",
-		Help: "amount of time queries take",
+		Help: "amount of time queries take (seconds)",
 	}, []string{"type"})
 )
 
@@ -52,7 +52,7 @@ func query(name string, typ uint16) error {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), typ)
 	in, rtt, err := c.Exchange(m, *server)
-	queryTimes.With(prom.Labels{"type": typStr}).Observe(float64(rtt))
+	queryTimes.With(prom.Labels{"type": typStr}).Observe(rtt.Seconds())
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 			err = fmt.Errorf("timeout")
