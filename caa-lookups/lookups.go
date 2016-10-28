@@ -96,7 +96,7 @@ func spawn(names chan string, wg *sync.WaitGroup) {
 					if err != nil {
 						fmt.Printf("%s: %s\n", name, err)
 					} else {
-						fmt.Printf("%s: ok\n", name, err)
+						fmt.Printf("%s: ok\n", name)
 						successes.Add(1)
 					}
 					wg.Done()
