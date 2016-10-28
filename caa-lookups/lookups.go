@@ -25,7 +25,8 @@ var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
 var parallel = flag.Int("parallel", 5, "Number of parallel queries")
 var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
 var spawnInterval = flag.Duration("spawnInterval", 1*time.Minute, "Interval on which to spawn goroutines")
-var checkCAA = flag.Bool("checkCAA", false, "Whether to check CAA records too")
+var checkCAA = flag.Bool("checkCAA", false, "Whether to check CAA records")
+var checkA = flag.Bool("checkA", false, "Whether to check A records")
 var c *dns.Client
 
 var (
@@ -68,9 +69,12 @@ func query(name string, typ uint16) error {
 }
 
 func tryAll(name string) error {
-	err := query(name, dns.TypeA)
-	if err != nil {
-		return err
+	var err error
+	if *checkA {
+		err = query(name, dns.TypeA)
+		if err != nil {
+			return err
+		}
 	}
 
 	labels := strings.Split(name, ".")
