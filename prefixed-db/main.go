@@ -4,48 +4,56 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"log"
+	"sync"
 
 	mysql "github.com/go-sql-driver/mysql"
 )
 
-type PrefixedDB struct {
-	Prefix string
+func New(prefix string, underlying driver.Driver) driver.Driver {
+	return &prefixedDB{
+		prefix:     prefix,
+		underlying: underlying,
+	}
 }
 
-func (p *PrefixedDB) Open(name string) (driver.Conn, error) {
-	conn, err := mysql.MySQLDriver{}.Open(name)
+type prefixedDB struct {
+	prefix     string
+	underlying driver.Driver
+}
+
+func (p *prefixedDB) Open(name string) (driver.Conn, error) {
+	conn, err := p.underlying.Open(name)
 	if err != nil {
 		return nil, err
 	}
-	return &PrefixedConn{
-		Prefix: p.Prefix,
+	return &prefixedConn{
+		prefix: p.prefix,
 		conn:   conn,
 	}, nil
 }
 
-type PrefixedConn struct {
-	Prefix string
+type prefixedConn struct {
+	prefix string
 	conn   driver.Conn
 }
 
-func (c *PrefixedConn) Prepare(query string) (driver.Stmt, error) {
-	query = c.Prefix + query
+func (c *prefixedConn) Prepare(query string) (driver.Stmt, error) {
+	query = c.prefix + query
 	log.Print(query)
-	s, err := c.conn.Prepare(query)
-	log.Print("done ", query)
-	return s, err
+	return c.conn.Prepare(query)
 }
 
-func (c *PrefixedConn) Close() error {
+func (c *prefixedConn) Close() error {
 	return c.conn.Close()
 }
 
-func (c *PrefixedConn) Begin() (driver.Tx, error) {
+func (c *prefixedConn) Begin() (driver.Tx, error) {
 	return c.conn.Begin()
 }
 
 func main() {
-	sql.Register("prefixedmysql", &PrefixedDB{"SET STATEMENT max_statement_time=10 FOR "})
+	sql.Register("prefixedmysql", New("SET STATEMENT max_statement_time=0.1 FOR ", mysql.MySQLDriver{}))
+	//sql.Register("prefixedmysql", &PrefixedDB{"  "})
 	db, err := sql.Open("prefixedmysql", "sa@tcp(boulder-mysql:3306)/boulder_sa_integration")
 	if err != nil {
 		log.Fatal(err)
@@ -53,9 +61,22 @@ func main() {
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
 	}
-	if _, err := db.Exec("SELECT ? FROM (SELECT SLEEP(?)) as subselect;", 1, 1); err != nil {
-		log.Fatal(err)
+	/*
+		if _, err := db.Exec("SET SESSION max_statement_time=0.1"); err != nil {
+			log.Fatal(err)
+		}
+	*/
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			if _, err := db.Exec("SELECT 1 FROM (SELECT SLEEP(?)) as subselect;", i); err != nil {
+				log.Print(err)
+			}
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 	rows, err := db.Query("SELECT id FROM authz WHERE registrationId = ?", 300)
 	if err != nil {
 		log.Fatal(err)
