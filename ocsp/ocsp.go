@@ -17,7 +17,7 @@ import (
 
 var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
-var tooSoon = flag.Int("too-soon", 100, "If NextUpdate is fewer than this many hours in future, warn.")
+var tooSoon = flag.Int("too-soon", 76, "If NextUpdate is fewer than this many hours in future, warn.")
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
