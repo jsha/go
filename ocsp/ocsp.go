@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"time"
 
 	"golang.org/x/crypto/ocsp"
 )
 
 var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
+var tooSoon = flag.Int("too-soon", 100, "If NextUpdate is fewer than this many hours in future, warn.")
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
@@ -47,7 +50,7 @@ func parse(body []byte) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-func req(fileName string) error {
+func req(fileName string, tooSoonDuration time.Duration) error {
 	contents, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return err
@@ -55,6 +58,10 @@ func req(fileName string) error {
 	cert, err := parse(contents)
 	if err != nil {
 		return err
+	}
+	if time.Now().After(cert.NotAfter) {
+		return fmt.Errorf("certificate expired %s ago: %s",
+			time.Now().Sub(cert.NotAfter), cert.NotAfter)
 	}
 	issuer, err := getIssuer(cert)
 	if err != nil {
@@ -110,22 +117,26 @@ func req(fileName string) error {
 	fmt.Printf("  Status %d\n", resp.Status)
 	fmt.Printf("  SerialNumber %036x\n", resp.SerialNumber)
 	fmt.Printf("  ProducedAt %s\n", resp.ProducedAt)
-	fmt.Printf("  ThisUpdate %s\n", resp.NextUpdate)
+	fmt.Printf("  ThisUpdate %s\n", resp.ThisUpdate)
 	fmt.Printf("  NextUpdate %s\n", resp.NextUpdate)
 	fmt.Printf("  RevokedAt %s\n", resp.RevokedAt)
 	fmt.Printf("  RevocationReason %d\n", resp.RevocationReason)
 	fmt.Printf("  SignatureAlgorithm %s\n", resp.SignatureAlgorithm)
 	fmt.Printf("  Extensions %#v\n", resp.Extensions)
+	timeTilExpiry := resp.NextUpdate.Sub(time.Now())
+	if timeTilExpiry < tooSoonDuration {
+		return fmt.Errorf("NextUpdate is too soon: %s", timeTilExpiry)
+	}
 	return nil
 }
 
 func main() {
 	flag.Parse()
 	for _, f := range flag.Args() {
-		err := req(f)
+		err := req(f, time.Duration(*tooSoon)*time.Hour)
 		if err != nil {
-			fmt.Printf("error: %s\n", err)
-			return
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			os.Exit(1)
 		}
 	}
 }
