@@ -3,13 +3,16 @@ package main
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -32,6 +35,9 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.Join(resp.Header["Content-Type"], "") == "application/x-pkcs7-mime" {
+		return parseCMS(body)
+	}
 	return parse(body)
 }
 
@@ -46,6 +52,27 @@ func parse(body []byte) (*x509.Certificate, error) {
 	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		return nil, err
+	}
+	return cert, nil
+}
+
+// parseCMS parses certificates from CMS messages of type SignedData.
+func parseCMS(body []byte) (*x509.Certificate, error) {
+	type signedData struct {
+		Version          int
+		Digests          asn1.RawValue
+		EncapContentInfo asn1.RawValue
+		Certificates     asn1.RawValue
+	}
+	type cms struct {
+		ContentType asn1.ObjectIdentifier
+		SignedData  signedData `asn1:"explicit,tag:0"`
+	}
+	var msg cms
+	_, err := asn1.Unmarshal(body, &msg)
+	cert, err := x509.ParseCertificate(msg.SignedData.Certificates.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CMS: %s", err)
 	}
 	return cert, nil
 }
@@ -77,14 +104,18 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	encodedReq := base64.StdEncoding.EncodeToString(req)
 	var httpResp *http.Response
 	ocspServer := cert.OCSPServer[0]
+	ocspURL, err := url.Parse(ocspServer)
 	if *urlOverride != "" {
 		ocspServer = *urlOverride
 	}
+	if err != nil {
+		return fmt.Errorf("parsing URL: %s", err)
+	}
 	if *method == "GET" {
-		url := fmt.Sprintf("%s%s\n", ocspServer, encodedReq)
-		fmt.Printf("Fetching %s\n", url)
+		ocspURL.Path = encodedReq
+		fmt.Printf("Fetching %s\n", ocspURL.String())
 		var err error
-		httpResp, err = http.Get(url)
+		httpResp, err = http.Get(ocspURL.String())
 		if err != nil {
 			return err
 		}
