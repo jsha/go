@@ -134,10 +134,14 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	} else {
 		return fmt.Errorf("invalid method %s, expected GET or POST", *method)
 	}
+	fmt.Printf("HTTP %d", httpResp.StatusCode)
 	for k, v := range httpResp.Header {
 		for _, vv := range v {
 			fmt.Printf("%s: %s\n", k, vv)
 		}
+	}
+	if httpResp.StatusCode != 200 {
+		return fmt.Errorf("http status code %d", httpResp.StatusCode)
 	}
 	respBytes, err := ioutil.ReadAll(httpResp.Body)
 	if err != nil {
