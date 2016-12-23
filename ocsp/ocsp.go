@@ -85,7 +85,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	}
 	cert, err := parse(contents)
 	if err != nil {
-		return err
+		return fmt.Errorf("parsing certificate: %s", err)
 	}
 	if time.Now().After(cert.NotAfter) {
 		if *ignoreExpiredCerts {
@@ -101,7 +101,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	}
 	req, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating OCSP request: %s", err)
 	}
 	if len(cert.OCSPServer) == 0 {
 		return fmt.Errorf("no ocsp servers in cert")
@@ -122,14 +122,14 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 		var err error
 		httpResp, err = http.Get(ocspURL.String())
 		if err != nil {
-			return err
+			return fmt.Errorf("fetching: %s", err)
 		}
 	} else if *method == "POST" {
 		fmt.Printf("Posting to %s: base64dec(%s)\n", ocspServer, encodedReq)
 		var err error
 		httpResp, err = http.Post(ocspServer, "application/ocsp-request", bytes.NewBuffer(req))
 		if err != nil {
-			return err
+			return fmt.Errorf("fetching: %s", err)
 		}
 	} else {
 		return fmt.Errorf("invalid method %s, expected GET or POST", *method)
@@ -146,7 +146,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	fmt.Printf("\nDecoding body: %s\n", base64.StdEncoding.EncodeToString(respBytes))
 	resp, err := ocsp.ParseResponse(respBytes, issuer)
 	if err != nil {
-		return err
+		return fmt.Errorf("parsing response: %s", err)
 	}
 	fmt.Printf("\n")
 	fmt.Printf("Good response:\n")
