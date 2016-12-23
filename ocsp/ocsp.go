@@ -171,7 +171,7 @@ func main() {
 	for _, f := range flag.Args() {
 		err := req(f, time.Duration(*tooSoon)*time.Hour)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			fmt.Fprintf(os.Stderr, "error for %s: %s\n", f, err)
 			os.Exit(1)
 		}
 	}
