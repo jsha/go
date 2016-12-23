@@ -171,11 +171,15 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 
 func main() {
 	flag.Parse()
+	var errors bool
 	for _, f := range flag.Args() {
 		err := req(f, time.Duration(*tooSoon)*time.Hour)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error for %s: %s\n", f, err)
-			os.Exit(1)
+			errors = true
 		}
+	}
+	if errors {
+		os.Exit(1)
 	}
 }
