@@ -21,6 +21,7 @@ import (
 var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
 var tooSoon = flag.Int("too-soon", 76, "If NextUpdate is fewer than this many hours in future, warn.")
+var ignoreExpiredCerts = flag.Bool("ignore-expired-certs", false, "If a cert is expired, don't bother requesting OCSP.")
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
@@ -87,8 +88,12 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 		return err
 	}
 	if time.Now().After(cert.NotAfter) {
-		return fmt.Errorf("certificate expired %s ago: %s",
-			time.Now().Sub(cert.NotAfter), cert.NotAfter)
+		if *ignoreExpiredCerts {
+			return nil
+		} else {
+			return fmt.Errorf("certificate expired %s ago: %s",
+				time.Now().Sub(cert.NotAfter), cert.NotAfter)
+		}
 	}
 	issuer, err := getIssuer(cert)
 	if err != nil {
