@@ -125,7 +125,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 			return fmt.Errorf("fetching: %s", err)
 		}
 	} else if *method == "POST" {
-		fmt.Printf("Posting to %s: base64dec(%s)\n", ocspServer, encodedReq)
+		fmt.Printf("POSTing request, reproduce with: base64 -d <<<%s | curl -i --data-binary @- %s\n", encodedReq, ocspServer)
 		var err error
 		httpResp, err = http.Post(ocspServer, "application/ocsp-request", bytes.NewBuffer(req))
 		if err != nil {
