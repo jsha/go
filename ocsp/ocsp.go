@@ -143,6 +143,9 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	if err != nil {
 		return err
 	}
+	if len(respBytes) == 0 {
+		return fmt.Errorf("empty reponse body")
+	}
 	fmt.Printf("\nDecoding body: %s\n", base64.StdEncoding.EncodeToString(respBytes))
 	resp, err := ocsp.ParseResponse(respBytes, issuer)
 	if err != nil {
