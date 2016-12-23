@@ -134,7 +134,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	} else {
 		return fmt.Errorf("invalid method %s, expected GET or POST", *method)
 	}
-	fmt.Printf("HTTP %d", httpResp.StatusCode)
+	fmt.Printf("HTTP %d\n", httpResp.StatusCode)
 	for k, v := range httpResp.Header {
 		for _, vv := range v {
 			fmt.Printf("%s: %s\n", k, vv)
