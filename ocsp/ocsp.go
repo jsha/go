@@ -159,7 +159,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 		return fmt.Errorf("empty reponse body")
 	}
 	fmt.Printf("\nDecoding body: %s\n", base64.StdEncoding.EncodeToString(respBytes))
-	resp, err := ocsp.ParseResponseForCert(respBytes, issuer, cert)
+	resp, err := ocsp.ParseResponseForCert(respBytes, cert, issuer)
 	if err != nil {
 		return fmt.Errorf("parsing response: %s", err)
 	}
