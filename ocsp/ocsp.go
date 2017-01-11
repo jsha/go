@@ -27,7 +27,8 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
 		return nil, fmt.Errorf("No AIA information available, can't get issuer")
 	}
-	resp, err := http.Get(cert.IssuingCertificateURL[0])
+	issuerURL := cert.IssuingCertificateURL[0]
+	resp, err := http.Get(issuerURL)
 	if err != nil {
 		return nil, err
 	}
@@ -36,10 +37,16 @@ func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	var issuer *x509.Certificate
 	if strings.Join(resp.Header["Content-Type"], "") == "application/x-pkcs7-mime" {
-		return parseCMS(body)
+		issuer, err = parseCMS(body)
+	} else {
+		issuer, err = parse(body)
 	}
-	return parse(body)
+	if err != nil {
+		return nil, fmt.Errorf("from %s: %s", issuerURL, err)
+	}
+	return issuer, nil
 }
 
 func parse(body []byte) (*x509.Certificate, error) {
