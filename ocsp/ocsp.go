@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	prom "github.com/prometheus/client_golang/prometheus"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -22,6 +24,34 @@ var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
 var tooSoon = flag.Int("too-soon", 76, "If NextUpdate is fewer than this many hours in future, warn.")
 var ignoreExpiredCerts = flag.Bool("ignore-expired-certs", false, "If a cert is expired, don't bother requesting OCSP.")
+
+var (
+	response_count = prom.NewCounterVec(prom.CounterOpts{
+		Name: "responses",
+		Help: "completed responses",
+	}, nil)
+	request_time_seconds_hist = prom.NewHistogram(prom.HistogramOpts{
+		Name: "request_time_seconds",
+		Help: "time a request takes",
+	})
+	request_time_seconds_summary = prom.NewSummary(prom.SummaryOpts{
+		Name: "request_time_seconds_summary",
+		Help: "time a request takes",
+	})
+	response_age_seconds = prom.NewHistogram(prom.HistogramOpts{
+		Name: "response_age_seconds",
+		Help: "how old OCSP responses were",
+		Buckets: []float64{24 * time.Hour.Seconds(), 48 * time.Hour.Seconds(),
+			72 * time.Hour.Seconds(), 96 * time.Hour.Seconds(), 120 * time.Hour.Seconds()},
+	})
+)
+
+func init() {
+	prom.MustRegister(response_count)
+	prom.MustRegister(request_time_seconds_hist)
+	prom.MustRegister(request_time_seconds_summary)
+	prom.MustRegister(response_age_seconds)
+}
 
 func getIssuer(cert *x509.Certificate) (*x509.Certificate, error) {
 	if len(cert.IssuingCertificateURL) == 0 {
@@ -123,6 +153,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("parsing URL: %s", err)
 	}
+	start := time.Now()
 	if *method == "GET" {
 		ocspURL.Path = encodedReq
 		fmt.Printf("Fetching %s\n", ocspURL.String())
@@ -155,6 +186,10 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	if err != nil {
 		return err
 	}
+	latency := time.Since(start)
+	request_time_seconds_hist.Observe(latency.Seconds())
+	response_count.With(prom.Labels{}).Inc()
+	request_time_seconds_summary.Observe(latency.Seconds())
 	if len(respBytes) == 0 {
 		return fmt.Errorf("empty reponse body")
 	}
@@ -174,6 +209,7 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 	fmt.Printf("  RevocationReason %d\n", resp.RevocationReason)
 	fmt.Printf("  SignatureAlgorithm %s\n", resp.SignatureAlgorithm)
 	fmt.Printf("  Extensions %#v\n", resp.Extensions)
+	response_age_seconds.Observe(time.Since(resp.ThisUpdate).Seconds())
 	timeTilExpiry := resp.NextUpdate.Sub(time.Now())
 	if timeTilExpiry < tooSoonDuration {
 		return fmt.Errorf("NextUpdate is too soon: %s", timeTilExpiry)
@@ -184,6 +220,8 @@ func req(fileName string, tooSoonDuration time.Duration) error {
 func main() {
 	flag.Parse()
 	var errors bool
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(":8080", nil)
 	for _, f := range flag.Args() {
 		err := req(f, time.Duration(*tooSoon)*time.Hour)
 		if err != nil {
