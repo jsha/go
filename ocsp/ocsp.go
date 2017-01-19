@@ -223,7 +223,7 @@ func main() {
 	var errors bool
 	http.Handle("/metrics", promhttp.Handler())
 	if *listenAddress != "" {
-		go http.ListenAndServe(":8080", nil)
+		go http.ListenAndServe(*listenAddress, nil)
 	}
 	for _, f := range flag.Args() {
 		err := req(f, time.Duration(*tooSoon)*time.Hour)
