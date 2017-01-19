@@ -24,6 +24,7 @@ var method = flag.String("method", "GET", "Method to use for fetching OCSP")
 var urlOverride = flag.String("url", "", "URL of OCSP responder to override")
 var tooSoon = flag.Int("too-soon", 76, "If NextUpdate is fewer than this many hours in future, warn.")
 var ignoreExpiredCerts = flag.Bool("ignore-expired-certs", false, "If a cert is expired, don't bother requesting OCSP.")
+var listenAddress = flag.String("listen", "", "Port to listen on, e.g. :8080")
 
 var (
 	response_count = prom.NewCounterVec(prom.CounterOpts{
@@ -221,7 +222,9 @@ func main() {
 	flag.Parse()
 	var errors bool
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(":8080", nil)
+	if *listenAddress != "" {
+		go http.ListenAndServe(":8080", nil)
+	}
 	for _, f := range flag.Args() {
 		err := req(f, time.Duration(*tooSoon)*time.Hour)
 		if err != nil {
