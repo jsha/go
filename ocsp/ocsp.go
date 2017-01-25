@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/jsha/go/ocsp/helper"
@@ -14,7 +14,7 @@ func main() {
 	for _, f := range flag.Args() {
 		_, err := helper.Req(f)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error for %s: %s\n", f, err)
+			log.Printf("error for %s: %s\n", f, err)
 			errors = true
 		}
 	}
