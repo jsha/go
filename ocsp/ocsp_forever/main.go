@@ -39,6 +39,10 @@ var (
 		Buckets: []float64{24 * time.Hour.Seconds(), 48 * time.Hour.Seconds(),
 			72 * time.Hour.Seconds(), 96 * time.Hour.Seconds(), 120 * time.Hour.Seconds()},
 	})
+	response_age_seconds_summary = prom.NewSummary(prom.SummaryOpts{
+		Name: "response_age_seconds_summary",
+		Help: "how old OCSP responses were",
+	})
 )
 
 func init() {
@@ -46,6 +50,7 @@ func init() {
 	prom.MustRegister(request_time_seconds_hist)
 	prom.MustRegister(request_time_seconds_summary)
 	prom.MustRegister(response_age_seconds)
+	prom.MustRegister(response_age_seconds_summary)
 }
 
 func main() {
@@ -70,6 +75,7 @@ func main() {
 			request_time_seconds_summary.Observe(latency.Seconds())
 			if resp != nil {
 				response_age_seconds.Observe(time.Since(resp.ThisUpdate).Seconds())
+				response_age_seconds_summary.Observe(time.Since(resp.ThisUpdate).Seconds())
 			}
 			time.Sleep(sleepTime)
 		}
