@@ -40,8 +40,9 @@ var (
 			72 * time.Hour.Seconds(), 96 * time.Hour.Seconds(), 120 * time.Hour.Seconds()},
 	})
 	response_age_seconds_summary = prom.NewSummary(prom.SummaryOpts{
-		Name: "response_age_seconds_summary",
-		Help: "how old OCSP responses were",
+		Name:       "response_age_seconds_summary",
+		Help:       "how old OCSP responses were",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001, 1: 0.0001},
 	})
 )
 
