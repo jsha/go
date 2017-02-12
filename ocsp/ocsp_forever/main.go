@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jsha/go/ocsp/helper"
@@ -54,6 +55,23 @@ func init() {
 	prom.MustRegister(response_age_seconds_summary)
 }
 
+func do(f string) {
+	start := time.Now()
+	resp, err := helper.Req(f)
+	if err != nil {
+		errors_count.With(prom.Labels{}).Inc()
+		fmt.Fprintf(os.Stderr, "error for %s: %s\n", f, err)
+	}
+	latency := time.Since(start)
+	request_time_seconds_hist.Observe(latency.Seconds())
+	response_count.With(prom.Labels{}).Inc()
+	request_time_seconds_summary.Observe(latency.Seconds())
+	if resp != nil {
+		response_age_seconds.Observe(time.Since(resp.ThisUpdate).Seconds())
+		response_age_seconds_summary.Observe(time.Since(resp.ThisUpdate).Seconds())
+	}
+}
+
 func main() {
 	flag.Parse()
 	sleepTime, err := time.ParseDuration(*interval)
@@ -63,22 +81,15 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*listenAddress, nil)
 	for {
-		for _, f := range flag.Args() {
-			start := time.Now()
-			resp, err := helper.Req(f)
+		for _, pattern := range flag.Args() {
+			files, err := filepath.Glob(pattern)
 			if err != nil {
-				errors_count.With(prom.Labels{}).Inc()
-				fmt.Fprintf(os.Stderr, "error for %s: %s\n", f, err)
+				log.Fatal(err)
 			}
-			latency := time.Since(start)
-			request_time_seconds_hist.Observe(latency.Seconds())
-			response_count.With(prom.Labels{}).Inc()
-			request_time_seconds_summary.Observe(latency.Seconds())
-			if resp != nil {
-				response_age_seconds.Observe(time.Since(resp.ThisUpdate).Seconds())
-				response_age_seconds_summary.Observe(time.Since(resp.ThisUpdate).Seconds())
+			for _, f := range files {
+				do(f)
+				time.Sleep(sleepTime)
 			}
-			time.Sleep(sleepTime)
 		}
 	}
 }
