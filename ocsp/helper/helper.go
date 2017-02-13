@@ -123,6 +123,7 @@ func Req(fileName string) (*ocsp.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing URL: %s", err)
 	}
+	http.DefaultClient.Timeout = 5 * time.Second
 	if *method == "GET" {
 		ocspURL.Path = encodedReq
 		fmt.Printf("Fetching %s\n", ocspURL.String())
