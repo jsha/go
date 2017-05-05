@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 )
 
 var n = flag.Int("n", 1, "Number of requests to make")
+var method = flag.String("method", "GET", "Request method (GET or POST)")
 
 func main() {
 	flag.Parse()
@@ -21,7 +23,16 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := http.Get(args[0])
+			var err error
+			var resp *http.Response
+			switch *method {
+			case "GET":
+				resp, err = http.Get(args[0])
+			case "POST":
+				resp, err = http.Post(args[0], "text/plain", strings.NewReader("HI"))
+			default:
+				fmt.Printf("Method %s not supported]\n", *method)
+			}
 			if err != nil {
 				fmt.Printf("err: %s\n", err)
 				return
