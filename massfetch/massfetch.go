@@ -4,12 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 var n = flag.Int("n", 1, "Number of requests to make")
+var interval = flag.String("interval", "1ns", "Interval between requests")
 var method = flag.String("method", "GET", "Request method (GET or POST)")
 
 func main() {
@@ -18,11 +21,17 @@ func main() {
 	if len(args) != 1 {
 		fmt.Println("provide exactly one URL on command line.")
 	}
+	intervalDuration, err := time.ParseDuration(*interval)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ticker := time.NewTicker(intervalDuration)
 	var wg sync.WaitGroup
 	for i := 0; i < *n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-ticker.C
 			var err error
 			var resp *http.Response
 			switch *method {
