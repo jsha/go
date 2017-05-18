@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -25,6 +26,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	client := &http.Client{Transport: tr}
+
 	ticker := time.NewTicker(intervalDuration)
 	var wg sync.WaitGroup
 	for i := 0; i < *n; i++ {
@@ -36,9 +44,9 @@ func main() {
 			var resp *http.Response
 			switch *method {
 			case "GET":
-				resp, err = http.Get(args[0])
+				resp, err = client.Get(args[0])
 			case "POST":
-				resp, err = http.Post(args[0], "text/plain", strings.NewReader("HI"))
+				resp, err = client.Post(args[0], "text/plain", strings.NewReader("HI"))
 			default:
 				fmt.Printf("Method %s not supported]\n", *method)
 			}
