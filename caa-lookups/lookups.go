@@ -27,6 +27,7 @@ var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
 var spawnInterval = flag.Duration("spawnInterval", 1*time.Minute, "Interval on which to spawn goroutines")
 var checkCAA = flag.Bool("checkCAA", false, "Whether to check CAA records")
 var checkA = flag.Bool("checkA", false, "Whether to check A records")
+var checkDNAME = flag.Bool("checkDNAME", false, "Whether to check A records")
 var c *dns.Client
 
 var (
@@ -46,6 +47,10 @@ var (
 		Name: "queryTime",
 		Help: "amount of time queries take (seconds)",
 	}, []string{"type"})
+	commandLine = prom.NewGaugeVec(prom.GaugeOpts{
+		Name: "commandLine",
+		Help: "command line",
+	}, []string{"line"})
 )
 
 func query(name string, typ uint16) error {
@@ -57,6 +62,8 @@ func query(name string, typ uint16) error {
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 			err = fmt.Errorf("timeout")
+		} else if _, ok := err.(*net.OpError); ok {
+			err = fmt.Errorf("net err")
 		}
 		resultStats.With(prom.Labels{"result": err.Error()}).Add(1)
 		return fmt.Errorf("for %s: %s", typStr, err)
@@ -64,12 +71,24 @@ func query(name string, typ uint16) error {
 		rcodeStr := dns.RcodeToString[in.Rcode]
 		resultStats.With(prom.Labels{"result": rcodeStr}).Add(1)
 		return fmt.Errorf("for %s: %s", typStr, rcodeStr)
+	} else if typ == dns.TypeDNAME && len(in.Answer) > 0 {
+		for _, ans := range in.Answer {
+			if _, ok := ans.(*dns.DNAME); ok {
+				return fmt.Errorf("for DNAME: nonempty")
+			}
+		}
 	}
 	return nil
 }
 
 func tryAll(name string) error {
 	var err error
+	if *checkDNAME {
+		err = query(name, dns.TypeDNAME)
+		if err != nil {
+			return err
+		}
+	}
 	if *checkA {
 		err = query(name, dns.TypeA)
 		if err != nil {
@@ -112,6 +131,9 @@ func spawn(names chan string, wg *sync.WaitGroup) {
 }
 
 func main() {
+	commandLine.With(prom.Labels{
+		"line": strings.Join(os.Args, " "),
+	}).Set(1)
 	flag.Parse()
 	var rLimit syscall.Rlimit
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
