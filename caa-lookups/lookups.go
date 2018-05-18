@@ -78,6 +78,11 @@ func query(name string, typ uint16) error {
 			}
 		}
 	}
+	for _, answer := range in.Answer {
+		if caaR, ok := answer.(*dns.CAA); ok && strings.ToLower(caaR.Tag) != caaR.Tag {
+			return fmt.Errorf("tag mismatch for %s: %s", strings.ToLower(caaR.Tag), caaR)
+		}
+	}
 	return nil
 }
 
@@ -166,9 +171,17 @@ func main() {
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
 			wg.Add(1)
-			names <- name
+			names <- ReverseName(name)
 		}
 	}
 	close(names)
 	wg.Wait()
+}
+
+func ReverseName(domain string) string {
+	labels := strings.Split(domain, ".")
+	for i, j := 0, len(labels)-1; i < j; i, j = i+1, j-1 {
+		labels[i], labels[j] = labels[j], labels[i]
+	}
+	return strings.Join(labels, ".")
 }
