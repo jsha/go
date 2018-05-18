@@ -20,7 +20,7 @@ import (
 
 var debugAddr = flag.String("debugAddr", ":6363", "Timeout")
 var timeout = flag.Duration("timeout", 30*time.Second, "Timeout")
-var server = flag.String("server", "127.0.0.1:53", "DNS server")
+var servers = flag.String("servers", "127.0.0.1:53", "Comma-separated list of DNS servers, round-robined")
 var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
 var parallel = flag.Int("parallel", 5, "Number of parallel queries")
 var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
@@ -53,11 +53,24 @@ var (
 	}, []string{"line"})
 )
 
+var serversSplit []string
+var whichServer int
+var whichMu sync.Mutex
+
+// Pick a server, round-robin style. Concurrent-safe.
+func pickServer() string {
+	whichMu.Lock()
+	which := whichServer
+	whichServer++
+	whichMu.Unlock()
+	return serversSplit[which%len(serversSplit)]
+}
+
 func query(name string, typ uint16) error {
 	typStr := dns.TypeToString[typ]
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), typ)
-	in, rtt, err := c.Exchange(m, *server)
+	in, rtt, err := c.Exchange(m, pickServer())
 	queryTimes.With(prom.Labels{"type": typStr}).Observe(rtt.Seconds())
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
@@ -140,6 +153,7 @@ func main() {
 		"line": strings.Join(os.Args, " "),
 	}).Set(1)
 	flag.Parse()
+	serversSplit = strings.Split(*servers, ",")
 	var rLimit syscall.Rlimit
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
 	if err != nil {
