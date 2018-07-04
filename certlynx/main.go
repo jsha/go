@@ -168,10 +168,7 @@ func saveEntry(tx *sql.Tx, logID int64, index int64, entry ct.LogEntry) error {
 	if entry.X509Cert != nil {
 		cert = entry.X509Cert
 	} else if entry.Precert != nil {
-		cert, err = x509.ParseCertificate(entry.Precert.Submitted.Data)
-		if err != nil {
-			return fmt.Errorf("parsing precertificate: %s", err)
-		}
+		cert = entry.Precert.TBSCertificate
 	}
 
 	issuerID, err = getIssuerID(tx, cert.Issuer.String())
