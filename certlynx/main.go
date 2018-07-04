@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
-	"os"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var interval time.Duration
 
 func getLogID(db *sql.DB, baseURL string) (int64, error) {
 	_, err := db.Exec(`INSERT OR IGNORE INTO logs (URL) VALUES(?);`, baseURL)
@@ -60,7 +63,7 @@ func getNextIndex(db *sql.DB, logID int64) (int64, error) {
 	return 0, nil
 }
 
-func sync(db *sql.DB, baseURL string) error {
+func sync(db *sql.DB, chunks chan<- chunk, baseURL string) error {
 	logID, err := getLogID(db, baseURL)
 	if err != nil {
 		return fmt.Errorf("getting log ID: %s", err)
@@ -70,7 +73,7 @@ func sync(db *sql.DB, baseURL string) error {
 	if err != nil {
 		return fmt.Errorf("getting max entry for log %d: %s", logID, err)
 	}
-	log.Printf("next index %d", nextIndex)
+	log.Printf("next index for log %d (%s) is %d", logID, baseURL, nextIndex)
 
 	client, err := client.New(baseURL, nil, jsonclient.Options{})
 	if err != nil {
@@ -80,30 +83,54 @@ func sync(db *sql.DB, baseURL string) error {
 	startIndex := nextIndex
 	endIndex := startIndex + 999
 	for {
-		begin := time.Now()
-		entries, err := client.GetEntries(context.TODO(), startIndex, endIndex)
-		if err != nil {
-			return fmt.Errorf("getting entries %d to %d from log %d: %s", startIndex,
-				endIndex, logID, err)
-		}
-		log.Printf("fetched entries %d to %d in %s", startIndex, endIndex, time.Since(begin))
+		go func(startIndex, endIndex int64) {
+			begin := time.Now()
+			entries, err := client.GetEntries(context.TODO(), startIndex, endIndex)
+			if err != nil {
+				log.Printf("error getting entries %d to %d from log %d (%s): %s", startIndex,
+					endIndex, logID, baseURL, err)
+			}
+			log.Printf("fetched entries %d to %d for log %d (%s) in %s",
+				startIndex, endIndex, logID, baseURL, time.Since(begin))
 
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		err = saveEntries(tx, logID, startIndex, entries)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-		err = tx.Commit()
-		if err != nil {
-			return err
-		}
-		log.Printf("stored log %d entries %d through %d", logID, startIndex, endIndex)
+			chunks <- chunk{logID, startIndex, entries}
+			log.Printf("stored log %d entries %d through %d", logID, startIndex, endIndex)
+		}(startIndex, endIndex)
+		time.Sleep(interval)
 		startIndex = endIndex + 1
 		endIndex = startIndex + 999
+	}
+	return nil
+}
+
+type chunk struct {
+	logID      int64
+	startIndex int64
+	entries    []ct.LogEntry
+}
+
+func processChunks(db *sql.DB, chunks <-chan chunk) {
+	for ch := range chunks {
+		err := processChunk(db, ch)
+		if err != nil {
+			log.Printf("processing chunk %s: %s", ch, err)
+		}
+	}
+}
+
+func processChunk(db *sql.DB, ch chunk) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	err = saveEntries(tx, ch.logID, ch.startIndex, ch.entries)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -271,14 +298,33 @@ func getCertificateID(tx *sql.Tx, issuerID int64, data certificateData) (int64, 
 }
 
 func main() {
+	var intervalString = flag.String("interval", "50ms", "interval between fetches")
+	flag.Parse()
+	var err error
+	interval, err = time.ParseDuration(*intervalString)
+	if err != nil {
+		log.Fatal(err)
+	}
 	db, err := sql.Open("sqlite3", "db.sqlite3")
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, v := range os.Args[1:] {
-		err := sync(db, v)
+	chunks := make(chan chunk, 20)
+	go processChunks(db, chunks)
+	for _, v := range flag.Args() {
+		url, err := url.Parse(v)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("not a URL: %q", v)
 		}
+		if url.Scheme != "https" {
+			log.Fatalf("invalid URL scheme %q in %q", url.Scheme, v)
+		}
+		go func(v string) {
+			err := sync(db, chunks, v)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}(v)
 	}
+	select {}
 }
