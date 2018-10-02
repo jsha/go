@@ -63,6 +63,8 @@ func getNextIndex(db *sql.DB, logID int64) (int64, error) {
 	return 0, nil
 }
 
+var throttle = make(chan bool, 10)
+
 func sync(db *sql.DB, chunks chan<- chunk, baseURL string) error {
 	logID, err := getLogID(db, baseURL)
 	if err != nil {
@@ -96,7 +98,7 @@ func sync(db *sql.DB, chunks chan<- chunk, baseURL string) error {
 			chunks <- chunk{logID, startIndex, entries}
 			log.Printf("stored log %d entries %d through %d", logID, startIndex, endIndex)
 		}(startIndex, endIndex)
-		time.Sleep(interval)
+		<-throttle
 		startIndex = endIndex + 1
 		endIndex = startIndex + 999
 	}
@@ -132,6 +134,7 @@ func processChunk(db *sql.DB, ch chunk) error {
 	if err != nil {
 		return err
 	}
+	throttle <- true
 	return nil
 }
 
