@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	irc "github.com/fluffle/goirc/client"
 	fglog "github.com/fluffle/goirc/logging/glog"
 	"github.com/golang/glog"
@@ -70,11 +70,11 @@ func main() {
 			IconEmoji: ":horse:",
 		})
 		if err != nil {
-			log.Errorf("%s", err)
+			glog.Errorf("Err %s", err)
 		}
 		resp, err := http.Post(*postURL, "application/json", bytes.NewBuffer(body))
 		if err != nil {
-			log.Errorf("%s", err)
+			glog.Errorf("%s", err)
 		}
 		resp.Body.Close()
 	})
