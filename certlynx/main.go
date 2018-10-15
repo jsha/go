@@ -115,7 +115,7 @@ func processChunks(db *sql.DB, chunks <-chan chunk) {
 	for ch := range chunks {
 		err := processChunk(db, ch)
 		if err != nil {
-			log.Printf("processing chunk %s: %s", ch, err)
+			log.Printf("processing chunk %v: %s", ch, err)
 		}
 	}
 }
