@@ -30,6 +30,7 @@ var checkA = flag.Bool("checkA", false, "Whether to check A records")
 var checkAAAA = flag.Bool("checkAAAA", false, "Whether to check AAAA records")
 var checkDNAME = flag.Bool("checkDNAME", false, "Whether to check DNAME records")
 var checkTXT = flag.Bool("checkTXT", false, "Whether to check TXT records")
+var reverseNames = flag.Bool("reverse", false, "Whether to reverse input domains")
 var c *dns.Client
 
 var (
@@ -198,7 +199,10 @@ func main() {
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
 			wg.Add(1)
-			names <- ReverseName(name)
+			if *reverseNames {
+				name = ReverseName(name)
+			}
+			names <- name
 		}
 	}
 	close(names)
