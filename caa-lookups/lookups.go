@@ -27,7 +27,10 @@ var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
 var spawnInterval = flag.Duration("spawnInterval", 1*time.Minute, "Interval on which to spawn goroutines")
 var checkCAA = flag.Bool("checkCAA", false, "Whether to check CAA records")
 var checkA = flag.Bool("checkA", false, "Whether to check A records")
-var checkDNAME = flag.Bool("checkDNAME", false, "Whether to check A records")
+var checkAAAA = flag.Bool("checkAAAA", false, "Whether to check AAAA records")
+var checkDNAME = flag.Bool("checkDNAME", false, "Whether to check DNAME records")
+var checkTXT = flag.Bool("checkTXT", false, "Whether to check TXT records")
+var reverseNames = flag.Bool("reverse", false, "Whether to reverse input domains")
 var c *dns.Client
 
 var (
@@ -113,6 +116,17 @@ func tryAll(name string) error {
 			return err
 		}
 	}
+	if *checkAAAA {
+		if err := query(name, dns.TypeAAAA); err != nil {
+			return err
+		}
+	}
+	if *checkTXT {
+		target := fmt.Sprintf("_acme-challenge.%s", name)
+		if err := query(target, dns.TypeTXT); err != nil {
+			return err
+		}
+	}
 
 	labels := strings.Split(name, ".")
 	if *checkCAA {
@@ -185,7 +199,10 @@ func main() {
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
 			wg.Add(1)
-			names <- ReverseName(name)
+			if *reverseNames {
+				name = ReverseName(name)
+			}
+			names <- name
 		}
 	}
 	close(names)
