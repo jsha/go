@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -18,10 +19,20 @@ import (
 	"github.com/google/certificate-transparency-go/jsonclient"
 	"github.com/google/certificate-transparency-go/x509"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var interval time.Duration
+
+var (
+	insertCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "inserts",
+		Help: "The total number of inserts handled",
+	})
+)
 
 func getLogID(db *sql.DB, baseURL string) (int64, error) {
 	_, err := db.Exec(`INSERT OR IGNORE INTO logs (URL) VALUES(?);`, baseURL)
@@ -211,6 +222,7 @@ func storeEntry(tx *sql.Tx, logID, index, certificateID int64) error {
 func storeNames(tx *sql.Tx, issuerID, certificateID int64, notAfter time.Time, names []string) error {
 	for _, name := range names {
 		reversedName := reverseName(name)
+		insertCounter.Inc()
 		_, err := tx.Exec(`INSERT INTO names (reversedName, notAfter, issuerID, certificateID)
 			VALUES(?, ?, ?, ?)`,
 			reversedName, notAfter, issuerID, certificateID)
@@ -219,6 +231,7 @@ func storeNames(tx *sql.Tx, issuerID, certificateID int64, notAfter time.Time, n
 		}
 	}
 	sum := hashNames(names)
+	insertCounter.Inc()
 	_, err := tx.Exec(`INSERT INTO fqdnSets (fqdnSetSHA256, notAfter, issuerID, certificateID)
 		VALUES(?, ?, ?, ?)`,
 		sum, notAfter, issuerID, certificateID)
@@ -253,6 +266,7 @@ func hashNames(names []string) []byte {
 }
 
 func getIssuerID(tx *sql.Tx, issuer string) (int64, error) {
+	insertCounter.Inc()
 	_, err := tx.Exec(`INSERT OR IGNORE INTO issuers (issuer) VALUES(?)`, issuer)
 	if err != nil {
 		return -1, err
@@ -298,6 +312,9 @@ func getCertificateID(tx *sql.Tx, issuerID int64, data certificateData) (int64, 
 }
 
 func main() {
+	http.Handle("/metrics", promhttp.Handler())
+	go http.ListenAndServe(":2112", nil)
+
 	var intervalString = flag.String("interval", "50ms", "interval between fetches")
 	flag.Parse()
 	var err error
@@ -305,10 +322,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := sql.Open("sqlite3", "db.sqlite3")
+	db, err := sql.Open("sqlite3", "db.sqlite3?journal_mode=WAL")
 	if err != nil {
 		log.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	chunks := make(chan chunk, 20)
 	go processChunks(db, chunks)
 	for _, v := range flag.Args() {
