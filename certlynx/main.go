@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/certificate-transparency-go"
+	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
 	"github.com/google/certificate-transparency-go/x509"
@@ -24,8 +24,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 )
-
-var interval time.Duration
 
 var (
 	insertCounter = prometheus.NewCounter(prometheus.CounterOpts{
@@ -315,13 +313,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(":2112", nil)
 
-	var intervalString = flag.String("interval", "50ms", "interval between fetches")
-	flag.Parse()
-	var err error
-	interval, err = time.ParseDuration(*intervalString)
-	if err != nil {
-		log.Fatal(err)
-	}
 	db, err := sql.Open("sqlite3", "db.sqlite3?journal_mode=WAL")
 	if err != nil {
 		log.Fatal(err)
