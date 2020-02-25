@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -20,19 +21,23 @@ var (
 	resultStats = prom.NewCounterVec(prom.CounterOpts{
 		Name: "results",
 		Help: "query results",
-	}, []string{"result", "target"})
+	}, []string{"result", "target", "targetAddr", "qname"})
 	queryTimes = prom.NewSummaryVec(prom.SummaryOpts{
 		Name:       "queryTime",
 		Help:       "amount of time queries take (seconds)",
 		Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.9: 0.01, 0.99: 0.001},
-	}, []string{"target", "targetAddr"})
+	}, []string{"target", "targetAddr", "qname"})
+
+	targetsFilename = flag.String("targets", "targets.txt", "File containing space-separated (target, qname) pairs.")
+	listenAddr      = flag.String("listenAddr", ":7698", "Address / port to listen on.")
 )
 
 func main() {
+	flag.Parse()
 	prom.MustRegister(resultStats)
 	prom.MustRegister(queryTimes)
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(":7698", nil)
+	go http.ListenAndServe(*listenAddr, nil)
 	if err := main2(); err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +65,7 @@ func main2() error {
 }
 
 func readTargets() ([]probe, error) {
-	fileHandle, err := os.Open("targets.txt")
+	fileHandle, err := os.Open(*targetsFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -110,10 +115,12 @@ func (p probe) run() {
 		duration := time.Since(start)
 		if err != nil {
 			log.Printf("error asking %s for %q: %s", formattedTarget, p.qname, err)
+			resultStats.With(prom.Labels{"result": "err", "target": p.target, "targetAddr": targetAddr, "qname": p.qname}).Add(1)
 		} else {
+			resultStats.With(prom.Labels{"result": "ok", "target": p.target, "targetAddr": targetAddr, "qname": p.qname}).Add(1)
 			log.Printf("probe to %s for %q took %s", formattedTarget, p.qname, duration)
 		}
-		queryTimes.With(prom.Labels{"target": p.target, "targetAddr": targetAddr}).Observe(duration.Seconds())
-		time.Sleep(5 * time.Second)
+		queryTimes.With(prom.Labels{"target": p.target, "targetAddr": targetAddr, "qname": p.qname}).Observe(duration.Seconds())
+		time.Sleep(time.Minute)
 	}
 }
