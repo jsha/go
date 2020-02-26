@@ -30,10 +30,18 @@ var (
 
 	targetsFilename = flag.String("targets", "targets.txt", "File containing space-separated (target, qname) pairs.")
 	listenAddr      = flag.String("listenAddr", ":7698", "Address / port to listen on.")
+	interval        = flag.String("interval", "5m", "Interval between probes")
+
+	intervalDuration time.Duration
 )
 
 func main() {
 	flag.Parse()
+	var err error
+	intervalDuration, err = time.ParseDuration(*interval)
+	if err != nil {
+		log.Fatal(err)
+	}
 	prom.MustRegister(resultStats)
 	prom.MustRegister(queryTimes)
 	http.Handle("/metrics", promhttp.Handler())
@@ -121,6 +129,6 @@ func (p probe) run() {
 			log.Printf("probe to %s for %q took %s", formattedTarget, p.qname, duration)
 		}
 		queryTimes.With(prom.Labels{"target": p.target, "targetAddr": targetAddr, "qname": p.qname}).Observe(duration.Seconds())
-		time.Sleep(time.Minute)
+		time.Sleep(intervalDuration)
 	}
 }
