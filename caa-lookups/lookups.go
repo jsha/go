@@ -26,7 +26,7 @@ var proto = flag.String("proto", "udp", "DNS proto (tcp or udp)")
 var parallel = flag.Int("parallel", 5, "Number of parallel queries")
 var spawnRate = flag.Int("spawnRate", 100, "Rate of spawning goroutines")
 var spawnInterval = flag.Duration("spawnInterval", 1*time.Minute, "Interval on which to spawn goroutines")
-var checkCAA = flag.Bool("checkCAA", false, "Whether to check CAA records")
+var checkCAA = flag.Bool("checkCAA", true, "Whether to check CAA records")
 var checkA = flag.Bool("checkA", false, "Whether to check A records")
 var checkAAAA = flag.Bool("checkAAAA", false, "Whether to check AAAA records")
 var checkDNAME = flag.Bool("checkDNAME", false, "Whether to check DNAME records")
@@ -95,10 +95,8 @@ func query(name string, typ uint16) error {
 			}
 		}
 	}
-	for _, answer := range in.Answer {
-		if caaR, ok := answer.(*dns.CAA); ok && strings.ToLower(caaR.Tag) != caaR.Tag {
-			return fmt.Errorf("tag mismatch for %s: %s", strings.ToLower(caaR.Tag), caaR)
-		}
+	if len(in.Answer) > 0 {
+		return fmt.Errorf("non-empty CAA response")
 	}
 	return nil
 }
