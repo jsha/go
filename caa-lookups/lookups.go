@@ -16,6 +16,7 @@ import (
 
 	"github.com/miekg/dns"
 	prom "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var debugAddr = flag.String("debugAddr", ":6363", "Timeout")
@@ -194,7 +195,7 @@ func main() {
 	names := make(chan string)
 	wg := sync.WaitGroup{}
 	go spawn(names, &wg)
-	http.Handle("/metrics", prom.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(*debugAddr, nil)
 	for _, name := range strings.Split(string(b), "\n") {
 		if name != "" {
