@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 var (
@@ -32,12 +32,14 @@ var (
 	})
 )
 
+var dbConnect = flag.String("dbconnect", "", "database to connect to")
+
 func getLogID(db *sql.DB, baseURL string) (int64, error) {
-	_, err := db.Exec(`INSERT OR IGNORE INTO logs (URL) VALUES(?);`, baseURL)
+	_, err := db.Exec(`INSERT OR IGNORE INTO logs (url) VALUES(?);`, baseURL)
 	if err != nil {
 		return -1, err
 	}
-	rows, err := db.Query(`SELECT ROWID FROM logs WHERE URL = ?`, baseURL)
+	rows, err := db.Query(`SELECT id FROM logs WHERE url = ?`, baseURL)
 	if err != nil {
 		return -1, err
 	}
@@ -72,8 +74,6 @@ func getNextIndex(db *sql.DB, logID int64) (int64, error) {
 	return 0, nil
 }
 
-var throttle = make(chan bool, 10)
-
 func sync(db *sql.DB, chunks chan<- chunk, baseURL string) error {
 	logID, err := getLogID(db, baseURL)
 	if err != nil {
@@ -107,7 +107,6 @@ func sync(db *sql.DB, chunks chan<- chunk, baseURL string) error {
 			chunks <- chunk{logID, startIndex, entries}
 			log.Printf("stored log %d entries %d through %d", logID, startIndex, endIndex)
 		}(startIndex, endIndex)
-		<-throttle
 		startIndex = endIndex + 1
 		endIndex = startIndex + 999
 	}
@@ -143,7 +142,6 @@ func processChunk(db *sql.DB, ch chunk) error {
 	if err != nil {
 		return err
 	}
-	throttle <- true
 	return nil
 }
 
@@ -269,7 +267,7 @@ func getIssuerID(tx *sql.Tx, issuer string) (int64, error) {
 	if err != nil {
 		return -1, err
 	}
-	rows, err := tx.Query(`SELECT ROWID FROM issuers WHERE issuer = ?`, issuer)
+	rows, err := tx.Query(`SELECT id FROM issuers WHERE issuer = ?`, issuer)
 	if err != nil {
 		return -1, err
 	}
@@ -293,7 +291,7 @@ func getCertificateID(tx *sql.Tx, issuerID int64, data certificateData) (int64, 
 	if err != nil {
 		return -1, err
 	}
-	rows, err := tx.Query(`SELECT ROWID FROM certificates WHERE sha256 = ?`, data.sha256)
+	rows, err := tx.Query(`SELECT id FROM certificates WHERE sha256 = ?`, data.sha256)
 	if err != nil {
 		return -1, err
 	}
@@ -310,10 +308,12 @@ func getCertificateID(tx *sql.Tx, issuerID int64, data certificateData) (int64, 
 }
 
 func main() {
+	flag.Parse()
+
 	http.Handle("/metrics", promhttp.Handler())
 	go http.ListenAndServe(":2112", nil)
 
-	db, err := sql.Open("sqlite3", "db.sqlite3?journal_mode=WAL")
+	db, err := sql.Open("mysql", *dbConnect)
 	if err != nil {
 		log.Fatal(err)
 	}

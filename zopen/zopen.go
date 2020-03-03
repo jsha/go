@@ -68,7 +68,7 @@ func OpenMany(filenames []string) (<-chan string, error) {
 			sem <- true
 			handle, err := Open(fn)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "opening %q: %s", fn, err)
+				fmt.Fprintf(os.Stderr, "opening %q: %s\n", fn, err)
 			}
 			wg.Add(1)
 			go process(handle, ch, &wg, sem)

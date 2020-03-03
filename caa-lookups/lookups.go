@@ -70,7 +70,8 @@ func pickServer() string {
 	return serversSplit[which%len(serversSplit)]
 }
 
-func query(name string, typ uint16) error {
+func query(name string, typ uint16, wildcard bool) error {
+
 	typStr := dns.TypeToString[typ]
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), typ)
@@ -95,8 +96,37 @@ func query(name string, typ uint16) error {
 			}
 		}
 	}
-	if len(in.Answer) > 0 {
-		return fmt.Errorf("non-empty CAA response")
+	var caas []*dns.CAA
+	for _, answer := range in.Answer {
+		if caaR, ok := answer.(*dns.CAA); ok {
+			caas = append(caas, caaR)
+		}
+	}
+	if len(caas) > 0 {
+		var containsBlockingTag bool
+		var permitsLE bool
+		for _, caaR := range caas {
+			components := strings.Split(caaR.Value, ";")
+			issuerName := components[0]
+			if !wildcard && strings.EqualFold("issue", caaR.Tag) {
+				containsBlockingTag = true
+				if issuerName == "letsencrypt.org" {
+					permitsLE = true
+				}
+			}
+			if wildcard && strings.EqualFold("issuewild", caaR.Tag) {
+				containsBlockingTag = true
+				if issuerName == "letsencrypt.org" {
+					permitsLE = true
+				}
+			}
+		}
+		if containsBlockingTag && !permitsLE {
+			return fmt.Errorf("forbidding CAA response %s", caas)
+		}
+		if containsBlockingTag {
+			return fmt.Errorf("caa explicitly allowed")
+		}
 	}
 	return nil
 }
@@ -104,33 +134,39 @@ func query(name string, typ uint16) error {
 func tryAll(name string) error {
 	var err error
 	if *checkDNAME {
-		err = query(name, dns.TypeDNAME)
+		err = query(name, dns.TypeDNAME, false)
 		if err != nil {
 			return err
 		}
 	}
 	if *checkA {
-		err = query(name, dns.TypeA)
+		err = query(name, dns.TypeA, false)
 		if err != nil {
 			return err
 		}
 	}
 	if *checkAAAA {
-		if err := query(name, dns.TypeAAAA); err != nil {
+		if err := query(name, dns.TypeAAAA, false); err != nil {
 			return err
 		}
 	}
 	if *checkTXT {
 		target := fmt.Sprintf("_acme-challenge.%s", name)
-		if err := query(target, dns.TypeTXT); err != nil {
+		if err := query(target, dns.TypeTXT, false); err != nil {
 			return err
 		}
 	}
 
-	labels := strings.Split(name, ".")
 	if *checkCAA {
+
+		var wildcard bool
+		if strings.HasPrefix(name, "*.") {
+			wildcard = true
+			name = strings.TrimPrefix(name, "*.")
+		}
+		labels := strings.Split(name, ".")
 		for i := 0; i < len(labels); i++ {
-			err = query(strings.Join(labels[i:], "."), dns.TypeCAA)
+			err = query(strings.Join(labels[i:], "."), dns.TypeCAA, wildcard)
 			if err != nil {
 				return err
 			}
